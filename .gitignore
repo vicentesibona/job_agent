@@ -1,0 +1,28 @@
+# Entorno virtual
+venv/
+.env/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Bases de datos y archivos de datos
+*.db
+*.sqlite
+*.sqlite3
+*.csv
+*.json
+
+# Logs, temporales y bloqueos
+*.log
+.DS_Store
+.~lock.*
+~$*
+
+# Salidas generadas
+output/
+salida.docx
+*.docx
