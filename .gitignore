@@ -1,6 +1,7 @@
-# Entorno virtual
+# Entorno virtual y secretos
 venv/
-.env/
+.venv*
+.env*
 env/
 
 # Python
@@ -11,6 +12,8 @@ __pycache__/
 
 # Bases de datos y archivos de datos
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
 *.csv
@@ -18,11 +21,13 @@ __pycache__/
 
 # Logs, temporales y bloqueos
 *.log
+logs/
 .DS_Store
 .~lock.*
 ~$*
 
-# Salidas generadas
+# Salidas generadas y documentos personales
 output/
 salida.docx
 *.docx
+*.pdf

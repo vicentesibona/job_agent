@@ -124,3 +124,135 @@ python3 linkedin_scraper.py --delay 2.0
 | `--stats` | | `False` | Muestra resumen de la base de datos y finaliza. |
 | `--no-csv` | | `False` | Desactiva exportación a CSV. |
 | `--no-json` | | `False` | Desactiva exportación a JSON. |
+
+---
+
+## 🖥️ Revisor de Ofertas vs CVs Generados (`app.py`)
+
+App web local para revisar **en una misma pantalla** la oferta original (desde
+`empleos_santiago.db`) y el **CV generado** por el agente (carpeta `output/`),
+emparejados por `identificador`.
+
+```bash
+./run_app.sh                  # http://localhost:8000  (usa el venv: render.py + PDF)
+./run_app.sh --port 8080 --open
+
+python app.py                 # también funciona con el Python del sistema
+```
+
+- **Panel izquierdo**: lista de todas las ofertas, con búsqueda por cargo/empresa/id,
+  filtros "solo con CV" / "ocultar sin CV" y aviso `CV ✓` / `sin CV`.
+- **Panel derecho**: dos columnas — *Oferta original* (metadatos: **empresa**,
+  ubicación, fechas, seniority, tipo de empleo, link a LinkedIn; más
+  responsabilidades, requisitos y descripción) y *CV generado* (Markdown renderizado,
+  con el aviso del auditor del agente destacado arriba si lo hay).
+- **Vistas del CV**: conmutador `Markdown` / `HTML`. La vista HTML muestra el CV como
+  documento web con el diseño de `render.py` (A4, una columna, estilos de CV) y
+  funciona con CVs en `.md` **y en `.docx`** (el `.docx` se convierte al vuelo).
+  Botones: *Abrir HTML ↗* (documento suelto en pestaña nueva), *Descargar HTML*,
+  *PDF* (si está WeasyPrint instalado) y *Original* (el `.md`/`.docx` tal cual).
+- Teclas: `/` busca, `j`/`k` navegan entre ofertas, `Esc` sale de la búsqueda.
+- No modifica `agent.py` ni `linkedin_scraper.py`: solo los lee.
+- Sin dependencias obligatorias: si `render.py` o `markdown` no están disponibles,
+  la app usa `md2html` (render propio, sólo biblioteca estándar).
+
+Para que los CVs aparezcan, `agent.py` debe correr con los nombres de columna de esta BD:
+
+```bash
+python agent.py --db empleos_santiago.db --table empleos \
+  --id-col identificador --title-col empleo --out output
+```
+
+| Parámetro | Valor por defecto | Descripción |
+| :--- | :--- | :--- |
+| `--db` | `empleos_santiago.db` | Base SQLite con la tabla `empleos`. |
+| `--output` | `output` | Carpeta con los CVs generados. |
+| `--host` | `127.0.0.1` | `0.0.0.0` para exponer en la red local. |
+| `--port` | `8000` | Puerto HTTP (si está ocupado se usa el siguiente libre). |
+| `--open` | `False` | Abre el navegador automáticamente. |
+
+### API interna
+
+| Endpoint | Devuelve |
+| :--- | :--- |
+| `GET /api/jobs?q=&only_cv=` | Lista de ofertas + estadísticas. |
+| `GET /api/job/<id>` | Oferta completa (metadatos, secciones, CVs, si hay PDF). |
+| `GET /api/cv/<id>/<archivo>` | El CV en texto crudo. |
+| `GET /api/cv/<id>/<archivo>?view=html` | El CV como documento HTML. |
+| `GET /api/cv/<id>/<archivo>?view=pdf` | El CV como PDF (requiere WeasyPrint). |
+| `GET /api/cv/<id>/<archivo>?download=1` | Descarga el archivo original. |
+
+---
+
+## 🧮 Contar tokens de Ollama
+
+Dos formas de medirlo, según lo que necesites.
+
+### 1. Por corrida del agente (`contador_tokens.py`)
+
+Mide los tokens de **cada oferta**, sin modificar `agent.py` (lo envuelve en
+memoria: intercepta `build_llm` y `fetch_rows`).
+
+```bash
+./venv/bin/python contador_tokens.py --provider ollama --model gemma4:12b \
+  --db empleos_santiago.db --table empleos \
+  --id-col identificador --title-col empleo --out output --overwrite
+
+./venv/bin/python contador_tokens.py --reporte     # historial acumulado
+```
+
+Salida al terminar:
+
+```
+📊 RESUMEN DE TOKENS
+Modelo        : gemma4:12b
+Llamadas LLM  : 5
+Tokens entrada: 16,381
+Tokens salida : 42,204
+Tokens TOTALES: 58,585
+id            archivo                        calls   entrada   salida
+4479254003    cv_4479254003_Data_Scientist.md     5    16,381   42,204
+```
+
+El historial queda en `logs/tokens.jsonl` (una línea JSON por corrida) y la app lo
+muestra: pastilla 🧮 con los tokens de cada CV + total en la barra superior.
+
+### 2. Uso total de Ollama en la máquina (`ver_tokens_ollama.sh`)
+
+Lee el log del servicio `ollama`, donde cada petición deja su desglose de tokens.
+
+```bash
+./ver_tokens_ollama.sh              # desde que arrancó el servicio
+./ver_tokens_ollama.sh --since today
+```
+
+```
+ Peticiones (respuestas)  : 3389
+ Tokens de entrada        : 112364
+ Tokens de salida         : 619335
+ TOTAL                    : 731699
+```
+
+También sirve a mano: `curl -s localhost:11434/api/chat -d '{...}'` devuelve
+`prompt_eval_count` (entrada) y `eval_count` (salida) en cada respuesta.
+
+---
+
+## 📄 CVs en HTML (`md2html.py`)
+
+Conversor independiente (sólo biblioteca estándar) que transforma un CV en Markdown
+o `.docx` a un **documento HTML autónomo**, con estilos de CV listos para imprimir
+(A4) o guardar como PDF.
+
+```bash
+python md2html.py salida.docx -o salida.html      # un archivo
+python md2html.py output/ --outdir output_html/    # toda la carpeta
+python md2html.py output/cv_1234_Python.md --title "Data Scientist" --subtitle "Acme"
+```
+
+- `.md` → HTML con encabezados, listas anidadas, negrita/cursiva, código, tablas,
+  enlaces e imágenes.
+- `.docx` → HTML con párrafos, negrita/cursiva, listas ordenadas y tablas
+  (se lee el `word/document.xml` con `zipfile` + `xml`, sin `python-docx`).
+- La app usa este mismo módulo para servir la vista HTML de cada CV
+  (`/api/cv/<id>/<archivo>?view=html`).
